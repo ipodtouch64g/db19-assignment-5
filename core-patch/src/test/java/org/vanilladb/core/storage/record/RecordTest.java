@@ -1,18 +1,18 @@
 /*******************************************************************************
- * Copyright 2017 vanilladb.org
- * 
+ * Copyright 2016, 2017 vanilladb.org contributors
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
- *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- ******************************************************************************/
+ *******************************************************************************/
 package org.vanilladb.core.storage.record;
 
 import static org.junit.Assert.assertEquals;
@@ -41,7 +41,6 @@ import org.vanilladb.core.sql.VarcharConstant;
 import org.vanilladb.core.storage.buffer.Buffer;
 import org.vanilladb.core.storage.buffer.BufferMgr;
 import org.vanilladb.core.storage.file.BlockId;
-import org.vanilladb.core.storage.metadata.CatalogMgr;
 import org.vanilladb.core.storage.metadata.TableInfo;
 import org.vanilladb.core.storage.tx.Transaction;
 import org.vanilladb.core.storage.tx.recovery.RecoveryMgr;
@@ -63,19 +62,12 @@ public class RecordTest {
 		ServerInit.init(RecordTest.class);
 		RecoveryMgr.enableLogging(false);
 
-		tx = VanillaDb.txMgr().newTransaction(
-				Connection.TRANSACTION_SERIALIZABLE, false);
-
-		CatalogMgr md = VanillaDb.catalogMgr();
 		schema = new Schema();
 		schema.addField("cid", INTEGER);
 		schema.addField("title", VARCHAR(20));
 		schema.addField("deptid", BIGINT);
-		md.createTable(tableName1, schema, tx);
-		md.createTable(tableName2, schema, tx);
-		ti1 = md.getTableInfo(tableName1, tx);
-		ti2 = md.getTableInfo(tableName2, tx);
-		tx.commit();
+		ti1 = new TableInfo(tableName1, schema);
+		ti2 = new TableInfo(tableName2, schema);
 		
 		if (logger.isLoggable(Level.INFO))
 			logger.info("BEGIN RECORD TEST");
@@ -280,12 +272,10 @@ public class RecordTest {
 	public void testASpecialCase() {
 		tx = VanillaDb.txMgr().newTransaction(
 				Connection.TRANSACTION_SERIALIZABLE, false);
-
-		CatalogMgr md = VanillaDb.catalogMgr();
+		
 		Schema sch = new Schema();
 		sch.addField("test_str", Type.VARCHAR(30));
-		md.createTable("test_table", sch, tx);
-		TableInfo ti = md.getTableInfo("test_table", tx);
+		TableInfo ti = new TableInfo("test_table", sch);
 		RecordFile.formatFileHeader(ti.fileName(), tx);
 		
 		// Insert a record

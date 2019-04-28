@@ -1,18 +1,18 @@
 /*******************************************************************************
- * Copyright 2017 vanilladb.org
- * 
+ * Copyright 2016, 2017 vanilladb.org contributors
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
- *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- ******************************************************************************/
+ *******************************************************************************/
 package org.vanilladb.core.storage.buffer;
 
 import java.util.HashMap;
@@ -71,6 +71,7 @@ public class BufferMgr implements TransactionLifecycleListener {
 		}
 	}
 
+	// Singleton - only one instance in the whole process
 	protected static BufferPoolMgr bufferPool = new BufferPoolMgr(BUFFER_POOL_SIZE);
 	protected static List<Thread> waitingThreads = new LinkedList<Thread>();
 
@@ -113,7 +114,10 @@ public class BufferMgr implements TransactionLifecycleListener {
 			return pinnedBuff.buffer;
 		}
 		
-		// This transaction has pinned too many buffers
+		/*
+		 * Throws BufferAbortException if the calling tx requires more buffers
+		 * than the size of buffer pool.
+		 */
 		if (pinnedBuffers.size() == BUFFER_POOL_SIZE)
 			throw new BufferAbortException();
 		

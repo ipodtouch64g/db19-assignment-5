@@ -15,7 +15,7 @@
 		</dependency>
 		<dependency>
 			<groupId>org.vanilladb</groupId>
-			<artifactId>core-patch</artifactId>
+			<artifactId>core</artifactId>
 			<version>0.3.2-2019-spring</version>
 		</dependency>
 	</dependencies>
