@@ -113,4 +113,14 @@ public class ReadCommittedTplConcurrencyMgr extends TwoPhaseLockingConcurrencyMg
 		// releases IS lock to allow phantoms
 		lockTbl.release(dataFileName, txNum, TplLockTable.IS_LOCK);
 	}
+	
+	@Override
+	public void modifyLeafBlock(BlockId blk) {
+		lockTbl.xLock(blk, txNum);
+	}
+	
+	@Override
+	public void readLeafBlock(BlockId blk) {
+		lockTbl.sLock(blk, txNum);
+	}
 }

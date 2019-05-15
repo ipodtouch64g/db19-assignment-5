@@ -15,6 +15,9 @@
  ******************************************************************************/
 package org.vanilladb.core.storage.tx.concurrency.tpl;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.vanilladb.core.storage.file.BlockId;
 import org.vanilladb.core.storage.record.RecordId;
 import org.vanilladb.core.storage.tx.Transaction;
@@ -23,6 +26,8 @@ import org.vanilladb.core.storage.tx.Transaction;
  * Repeatable-read two-phase-locking concurrency manager.
  */
 public class RepeatableReadTplConcurrencyMgr extends TwoPhaseLockingConcurrencyMgr {
+	
+	private List<BlockId> readLeafBlks = new ArrayList<BlockId>();
 
 	public RepeatableReadTplConcurrencyMgr(long txNumber) {
 		txNum = txNumber;
@@ -40,7 +45,10 @@ public class RepeatableReadTplConcurrencyMgr extends TwoPhaseLockingConcurrencyM
 
 	@Override
 	public void onTxEndStatement(Transaction tx) {
-		// TODO allow phantoms
+		// releases S lock of indices to allow phantoms
+		for (BlockId blk : readLeafBlks)
+			lockTbl.release(blk, txNum, TplLockTable.S_LOCK);
+		readLeafBlks.clear();
 	}
 
 	@Override
@@ -105,5 +113,16 @@ public class RepeatableReadTplConcurrencyMgr extends TwoPhaseLockingConcurrencyM
 		lockTbl.isLock(dataFileName, txNum);
 		// release IS lock to allow phantoms
 		lockTbl.release(dataFileName, txNum, TplLockTable.IS_LOCK);
+	}
+	
+	@Override
+	public void modifyLeafBlock(BlockId blk) {
+		lockTbl.xLock(blk, txNum);
+	}
+	
+	@Override
+	public void readLeafBlock(BlockId blk) {
+		lockTbl.sLock(blk, txNum);
+		readLeafBlks.add(blk);
 	}
 }

@@ -16,7 +16,6 @@
 package org.vanilladb.core.storage.tx.concurrency.tpl;
 
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -99,7 +98,7 @@ class TplLockTable {
 		}
 	}
 
-	private Map<Object, Lockers> lockerMap = new HashMap<Object, Lockers>();
+	private Map<Object, Lockers> lockerMap = new ConcurrentHashMap<Object, Lockers>();
 	private Map<Long, Set<Object>> lockByMap = new ConcurrentHashMap<Long, Set<Object>>();
 	private Set<Long> txnsToBeAborted = Collections
 			.synchronizedSet(new HashSet<Long>());

@@ -122,6 +122,10 @@ public interface ConcurrencyMgr extends TransactionLifecycleListener {
 	 *            the block id
 	 */
 	void readLeafBlock(BlockId blk);
+	
+	// =========================================================
+	// The following methods are designed for early lock release
+	// =========================================================
 
 	/**
 	 * Sets exclusive lock on the directory block when crabbing down for
@@ -155,8 +159,6 @@ public interface ConcurrencyMgr extends TransactionLifecycleListener {
 	 *            the block id
 	 */
 	void crabBackDirBlockForRead(BlockId blk);
-
-	void releaseIndexLocks();
 
 	void lockRecordFileHeader(BlockId blk);
 

@@ -94,4 +94,14 @@ public class SerializableTplConcurrencyMgr extends TwoPhaseLockingConcurrencyMgr
 	public void readIndex(String dataFileName) {
 		lockTbl.isLock(dataFileName, txNum);
 	}
+	
+	@Override
+	public void modifyLeafBlock(BlockId blk) {
+		lockTbl.xLock(blk, txNum);
+	}
+	
+	@Override
+	public void readLeafBlock(BlockId blk) {
+		lockTbl.sLock(blk, txNum);
+	}
 }
