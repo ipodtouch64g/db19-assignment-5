@@ -48,7 +48,9 @@ Here are some constraints you must follow during coding
 
 If you follows the above rules and hand in your code along with your report in time, you will get at least 60% of scores. The rest of the score will be given by the correctness (in logic), performance and your analysis of experimental result.
 
-You can run the `FullTestSuite` JUnit test. Note that even if you passed all the test cases, it would not mean that there is no bug. We will check the logic of your modification during the demo.
+You can run the `QueryTestSuite` JUnit test to check the correctness of your implementation.
+
+You only need to consider the SERIALIZABLE isolation level. We will not check other isolation levels (i.e., READ COMMITTED and REPEATABLE READ).
 
 We value the **correctness** of your implementation more than its **performance improvement**, that is, you may find your 2V2PL perform worse than the traditional 2PL, but still get a good score. However, you are not likely to get a good score if the implementation has obvious defects even though you achieve a significant performance improvement.
 
@@ -122,4 +124,4 @@ Due to the complexity of this assignment, we hope you can come to explain your w
 - Reference: Concurrency Control and Recovery in Database Systems Chapter 5.4 (link: https://drive.google.com/open?id=1VUpHlmZpsUqJ-8VhqjlVDNn52Wi34Gk0)
 
 ## Deadline
-Sumbit your work before **2019/05/19 (Sun.) 23:59:59**.
+Sumbit your work before **2019/05/26 (Sun.) 23:59:59**.
