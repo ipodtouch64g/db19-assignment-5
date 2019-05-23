@@ -15,6 +15,7 @@
  *******************************************************************************/
 package org.vanilladb.core.storage.record;
 
+
 import org.vanilladb.core.server.VanillaDb;
 import org.vanilladb.core.sql.Constant;
 import org.vanilladb.core.sql.Record;
@@ -49,7 +50,6 @@ public class RecordFile implements Record {
 	private FileHeaderPage fhp;
 	private long currentBlkNum;
 	private boolean doLog;
-
 	/**
 	 * Constructs an object to manage a file of records. If the file does not
 	 * exist, it is created. This method should be called by {@link TableInfo}
@@ -70,6 +70,8 @@ public class RecordFile implements Record {
 		this.doLog = doLog;
 		fileName = ti.fileName();
 		headerBlk = new BlockId(fileName, 0);
+		// let this tx knows which recordfile it holds.
+//		this.tx.myRF.add(this);
 	}
 
 	/**
@@ -144,7 +146,27 @@ public class RecordFile implements Record {
 	 * @return the value at that field
 	 */
 	public Constant getVal(String fldName) {
-		return rp.getVal(fldName);
+		// try to look up modifiedMap first, if hit then return, if not then getVal from rp
+		RecordId crId = currentRecordId();
+		recordLoc loc = new recordLoc(crId,fldName);
+		
+		RIDFLDMap temp = this.tx.modifiedMap.get(this.ti.tableName());
+		if(temp == null)
+		{
+			return rp.getVal(fldName);
+		}
+		else
+		{
+			Constant val = temp.get(loc);
+			if(val == null)
+			{
+				return rp.getVal(fldName);
+			}	
+			else 
+			{
+				return val;
+			}		
+		}
 	}
 
 	/**
@@ -158,15 +180,38 @@ public class RecordFile implements Record {
 	 */
 	public void setVal(String fldName, Constant val) {
 		if (tx.isReadOnly() && !isTempTable())
-			throw new UnsupportedOperationException();
+			throw new UnsupportedOperationException();	
 		Type fldType = ti.schema().type(fldName);
-
 		Constant v = val.castTo(fldType);
 		if (Page.size(v) > Page.maxSize(fldType))
 			throw new SchemaIncompatibleException();
-		rp.setVal(fldName, v);
+	
+		// write to modifiedMap first...
+		RecordId crId = currentRecordId();
+		recordLoc loc = new recordLoc(crId,fldName);
+		RIDFLDMap temp = this.tx.modifiedMap.get(ti.tableName());
+		if(temp!=null)
+		{
+			this.tx.modifiedMap.get(ti.tableName()).put(loc,v);
+		}
+		else
+		{
+			RIDFLDMap temp1 = new RIDFLDMap(ti);
+			temp1.put(loc,v);
+			this.tx.modifiedMap.put(ti.tableName(), temp1);
+		}
 	}
-
+	
+	public void setValToPublic(String fldName, Constant val) {
+		if (tx.isReadOnly() && !isTempTable())
+			throw new UnsupportedOperationException();	
+		Type fldType = ti.schema().type(fldName);
+		Constant v = val.castTo(fldType);
+		if (Page.size(v) > Page.maxSize(fldType))
+			throw new SchemaIncompatibleException();
+		rp.setVal(fldName, val);
+	}
+	
 	/**
 	 * Deletes the current record. The client must call next() to move to the
 	 * next record. Calls to methods on a deleted record have unspecified
@@ -229,7 +274,7 @@ public class RecordFile implements Record {
 
 		// Log that this logical operation starts
 		tx.recoveryMgr().logLogicalStart();
-
+		
 		if (fhp.hasDeletedSlots()) {
 			// Insert into a deleted slot
 			moveToRecordId(fhp.getLastDeletedSlot());
@@ -358,8 +403,8 @@ public class RecordFile implements Record {
 	private boolean moveTo(long b) {
 		if (rp != null)
 			rp.close();
-		
-		if (b >= fileSize()) // block b not allocated yet
+		long fs = fileSize();
+		if (b >= fs) // block b not allocated yet
 			return false;
 		currentBlkNum = b;
 		BlockId blk = new BlockId(fileName, currentBlkNum);
@@ -400,4 +445,19 @@ public class RecordFile implements Record {
 	private boolean atLastBlock() {
 		return currentBlkNum == fileSize() - 1;
 	}
+	@Override
+    public boolean equals(Object obj) {
+        if (obj == null) {
+            return false;
+        }
+        if (getClass() != obj.getClass()) {
+            return false;
+        }
+        final RecordFile other = (RecordFile) obj;
+        return this.ti.tableName() == other.ti.tableName();
+    }
+	 @Override
+    public int hashCode() {
+        return this.ti.tableName().hashCode();
+    }
 }

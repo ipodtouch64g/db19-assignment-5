@@ -45,7 +45,7 @@ class TplLockTable {
 	private static final long MAX_TIME;
 	private static final long EPSILON;
 	final static int IS_LOCK = 0, IX_LOCK = 1, S_LOCK = 2, SIX_LOCK = 3,
-			X_LOCK = 4;
+			X_LOCK = 4, C_LOCK = 5;
 
 	static {
 		MAX_TIME = CoreProperties.getLoader().getPropertyAsLong(
@@ -57,7 +57,7 @@ class TplLockTable {
 	class Lockers {
 		Set<Long> sLockers, ixLockers, isLockers, requestSet;
 		// only one tx can hold xLock(sixLock) on single item
-		long sixLocker, xLocker;
+		long sixLocker, xLocker,cLocker;
 		static final long NONE = -1; // for sixLocker, xLocker
 
 		Lockers() {
@@ -66,13 +66,14 @@ class TplLockTable {
 			isLockers = new HashSet<Long>();
 			sixLocker = NONE;
 			xLocker = NONE;
+			cLocker = NONE;
 			requestSet = new HashSet<Long>();
 		}
 		
 		@Override
 		public String toString() {
 			return "S: " + sLockers + ",IX: " + ixLockers + ",IS: " + isLockers
-					+ ",SIX: " + sixLocker + ",X: " + xLocker + ", request set: " + requestSet;
+					+ ",SIX: " + sixLocker + ",X: " + xLocker + ",C: " + cLocker + ", request set: " + requestSet;
 		}
 	}
 
@@ -128,8 +129,7 @@ class TplLockTable {
 
 		if (txnsToBeAborted.contains(txNum))
 			throw new LockAbortException("abort tx." + txNum + " for preventing deadlock");
-
-		if (lockType == IX_LOCK || lockType == SIX_LOCK || lockType == X_LOCK) {
+		if (lockType == IX_LOCK || lockType == SIX_LOCK || lockType == C_LOCK) {
 			for (Long tx : lks.sLockers) {
 				if (tx > txNum) {
 					txnsToBeAborted.add(tx);
@@ -138,7 +138,7 @@ class TplLockTable {
 				}
 			}
 		}
-		if (lockType == S_LOCK || lockType == SIX_LOCK || lockType == X_LOCK) {
+		if (lockType == S_LOCK || lockType == SIX_LOCK || lockType == X_LOCK || lockType == C_LOCK) {
 			for (Long tx : lks.ixLockers) {
 				if (tx > txNum) {
 					txnsToBeAborted.add(tx);
@@ -147,7 +147,7 @@ class TplLockTable {
 				}
 			}
 		}
-		if (lockType == X_LOCK) {
+		if (lockType == C_LOCK) {
 			for (Long tx : lks.isLockers) {
 				if (tx > txNum) {
 					txnsToBeAborted.add(tx);
@@ -157,17 +157,29 @@ class TplLockTable {
 			}
 		}
 		if (lockType == IX_LOCK || lockType == S_LOCK || lockType == SIX_LOCK
-				|| lockType == X_LOCK) {
+				|| lockType == X_LOCK || lockType == C_LOCK) {
 			if (lks.sixLocker > txNum) {
 				txnsToBeAborted.add(lks.sixLocker);
 				if (!toBeNotified.contains(lks.sixLocker))
 					toBeNotified.add(lks.sixLocker);
 			}
 		}
-		if (lks.xLocker > txNum) {
-			txnsToBeAborted.add(lks.xLocker);
-			if (!toBeNotified.contains(lks.xLocker))
-				toBeNotified.add(lks.xLocker);
+		
+		// X lock
+		if (lockType == IX_LOCK || lockType == SIX_LOCK
+				|| lockType == X_LOCK || lockType == C_LOCK) {
+			if (lks.xLocker > txNum) {
+				txnsToBeAborted.add(lks.xLocker);
+				if (!toBeNotified.contains(lks.xLocker))
+					toBeNotified.add(lks.xLocker);
+			}
+		}
+		
+		// C lock
+		if (lks.cLocker > txNum) {
+			txnsToBeAborted.add(lks.cLocker);
+			if (!toBeNotified.contains(lks.cLocker))
+				toBeNotified.add(lks.cLocker);
 		}
 	}
 
@@ -188,7 +200,7 @@ class TplLockTable {
 		txWaitMap.put(txNum, anchor);
 		synchronized (anchor) {
 			Lockers lks = prepareLockers(obj);
-
+			// don't lock again if this tx has already granted lock
 			if (hasSLock(lks, txNum))
 				return;
 
@@ -371,6 +383,37 @@ class TplLockTable {
 		}
 		txWaitMap.remove(txNum);
 	}
+	
+	void cLock(Object obj, long txNum) {
+		Object anchor = getAnchor(obj);
+		txWaitMap.put(txNum, anchor);
+		synchronized (anchor) {
+			Lockers lks = prepareLockers(obj);
+
+			if (hasCLock(lks, txNum))
+				return;
+
+			try {
+				long timestamp = System.currentTimeMillis();
+				while (!cLockable(lks, txNum) && !waitingTooLong(timestamp)) {
+					avoidDeadlock(lks, txNum, C_LOCK);
+					lks.requestSet.add(txNum);
+					
+					anchor.wait(MAX_TIME);
+					lks.requestSet.remove(txNum);
+				}
+				if (!cLockable(lks, txNum))
+					throw new LockAbortException();
+				lks.cLocker = txNum;
+				getObjectSet(txNum).add(obj);
+			} catch (InterruptedException e) {
+				throw new LockAbortException();
+			}
+		}
+		txWaitMap.remove(txNum);
+	}
+
+
 
 	/**
 	 * Releases the specified type of lock on an item holding by a transaction.
@@ -398,13 +441,13 @@ class TplLockTable {
 				// Check if this transaction have any other lock on this object
 				if (!hasSLock(lks, txNum) && !hasXLock(lks, txNum)
 						&& !hasSixLock(lks, txNum) && !hasIsLock(lks, txNum)
-						&& !hasIxLock(lks, txNum)) {
+						&& !hasIxLock(lks, txNum) && !hasCLock(lks, txNum)) {
 					getObjectSet(txNum).remove(obj);
 
 					// Remove the locker, if there is no other transaction
 					// having it
 					if (!sLocked(lks) && !xLocked(lks) && !sixLocked(lks)
-							&& !isLocked(lks) && !ixLocked(lks)
+							&& !isLocked(lks) && !ixLocked(lks) && !cLocked(lks)
 							&& lks.requestSet.isEmpty())
 						lockerMap.remove(obj);
 				}
@@ -439,6 +482,9 @@ class TplLockTable {
 
 					if (hasSixLock(lks, txNum))
 						releaseLock(lks, anchor, txNum, SIX_LOCK);
+					
+					if (hasCLock(lks, txNum) && !sLockOnly)
+						releaseLock(lks, anchor, txNum, C_LOCK);
 
 					while (hasIsLock(lks, txNum))
 						releaseLock(lks, anchor, txNum, IS_LOCK);
@@ -449,7 +495,7 @@ class TplLockTable {
 					// Remove the locker, if there is no other transaction
 					// having it
 					if (!sLocked(lks) && !xLocked(lks) && !sixLocked(lks)
-							&& !isLocked(lks) && !ixLocked(lks)
+							&& !isLocked(lks) && !ixLocked(lks) && !cLocked(lks)
 							&& lks.requestSet.isEmpty())
 						lockerMap.remove(obj);
 				}
@@ -476,6 +522,13 @@ class TplLockTable {
 		case SIX_LOCK:
 			if (lks.sixLocker == txNum) {
 				lks.sixLocker = -1;
+				
+				anchor.notifyAll();
+			}
+			return;
+		case C_LOCK:
+			if (lks.cLocker == txNum) {
+				lks.cLocker = -1;
 				
 				anchor.notifyAll();
 			}
@@ -509,6 +562,27 @@ class TplLockTable {
 		}
 	}
 
+	// Convert All X locks to C locks.
+	void X2C(long txNum)
+	{
+		Set<Object> objectsToChange = getObjectSet(txNum);
+		for (Object obj : objectsToChange) {
+			Object anchor = getAnchor(obj);
+//			anchor.notifyAll();
+			synchronized (anchor) {
+				Lockers lks = lockerMap.get(obj);
+				if (lks != null) {
+					if(lks.xLocker == txNum)
+					{
+						lks.xLocker = -1;
+						lks.cLocker = txNum;
+					}
+//					anchor.notifyAll();
+				}
+			}
+		}
+	}
+
 	private Lockers prepareLockers(Object obj) {
 		Lockers lockers = lockerMap.get(obj);
 		if (lockers == null) {
@@ -530,6 +604,7 @@ class TplLockTable {
 	private boolean waitingTooLong(long starttime) {
 		return System.currentTimeMillis() - starttime + EPSILON > MAX_TIME;
 	}
+	
 
 	/*
 	 * Verify if an item is locked.
@@ -542,7 +617,11 @@ class TplLockTable {
 	private boolean xLocked(Lockers lks) {
 		return lks != null && lks.xLocker != -1;
 	}
-
+	
+	private boolean cLocked(Lockers lks) {
+		return lks != null && lks.cLocker != -1;
+	}
+	
 	private boolean sixLocked(Lockers lks) {
 		return lks != null && lks.sixLocker != -1;
 	}
@@ -566,7 +645,11 @@ class TplLockTable {
 	private boolean hasXLock(Lockers lks, long txNUm) {
 		return lks != null && lks.xLocker == txNUm;
 	}
-
+	
+	private boolean hasCLock(Lockers lks, long txNUm) {
+		return lks != null && lks.cLocker == txNUm;
+	}
+	
 	private boolean hasSixLock(Lockers lks, long txNum) {
 		return lks != null && lks.sixLocker == txNum;
 	}
@@ -599,33 +682,43 @@ class TplLockTable {
 	 */
 
 	private boolean sLockable(Lockers lks, long txNum) {
-		return (!xLocked(lks) || hasXLock(lks, txNum))
+		return (!cLocked(lks) || hasCLock(lks, txNum))
 				&& (!sixLocked(lks) || hasSixLock(lks, txNum))
 				&& (!ixLocked(lks) || isTheOnlyIxLocker(lks, txNum));
 	}
 
 	private boolean xLockable(Lockers lks, long txNum) {
-		return (!sLocked(lks) || isTheOnlySLocker(lks, txNum))
+		return (!cLocked(lks) || hasCLock(lks, txNum))
 				&& (!sixLocked(lks) || hasSixLock(lks, txNum))
 				&& (!ixLocked(lks) || isTheOnlyIxLocker(lks, txNum))
-				&& (!isLocked(lks) || isTheOnlyIsLocker(lks, txNum))
 				&& (!xLocked(lks) || hasXLock(lks, txNum));
 	}
 
 	private boolean sixLockable(Lockers lks, long txNum) {
 		return (!sixLocked(lks) || hasSixLock(lks, txNum))
+				&& (!cLocked(lks) || hasCLock(lks, txNum))
 				&& (!ixLocked(lks) || isTheOnlyIxLocker(lks, txNum))
+				&& (!sLocked(lks) || isTheOnlySLocker(lks, txNum))
+				&& (!xLocked(lks) || hasXLock(lks, txNum));
+	}
+	
+	private boolean cLockable(Lockers lks, long txNum) {
+		return (!sixLocked(lks) || hasSixLock(lks, txNum))
+				&& (!cLocked(lks) || hasCLock(lks, txNum))
+				&& (!ixLocked(lks) || isTheOnlyIxLocker(lks, txNum))
+				&& (!isLocked(lks) || isTheOnlyIsLocker(lks, txNum))
 				&& (!sLocked(lks) || isTheOnlySLocker(lks, txNum))
 				&& (!xLocked(lks) || hasXLock(lks, txNum));
 	}
 
 	private boolean ixLockable(Lockers lks, long txNum) {
 		return (!sLocked(lks) || isTheOnlySLocker(lks, txNum))
+				&& (!cLocked(lks) || hasCLock(lks, txNum))
 				&& (!sixLocked(lks) || hasSixLock(lks, txNum))
 				&& (!xLocked(lks) || hasXLock(lks, txNum));
 	}
 
 	private boolean isLockable(Lockers lks, long txNum) {
-		return (!xLocked(lks) || hasXLock(lks, txNum));
+		return (!cLocked(lks) || hasCLock(lks, txNum));
 	}
 }

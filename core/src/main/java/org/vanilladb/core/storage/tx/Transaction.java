@@ -15,13 +15,22 @@
  *******************************************************************************/
 package org.vanilladb.core.storage.tx;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.vanilladb.core.server.VanillaDb;
+import org.vanilladb.core.sql.Constant;
 import org.vanilladb.core.storage.buffer.BufferMgr;
+import org.vanilladb.core.storage.record.RIDFLDMap;
+import org.vanilladb.core.storage.record.RecordFile;
+import org.vanilladb.core.storage.record.recordLoc;
 import org.vanilladb.core.storage.tx.concurrency.ConcurrencyMgr;
 import org.vanilladb.core.storage.tx.recovery.RecoveryMgr;
 
@@ -39,7 +48,10 @@ public class Transaction {
 	private List<TransactionLifecycleListener> lifecycleListeners;
 	private long txNum;
 	private boolean readOnly;
-
+	// This map will store temp modified data for this tx until it commits.
+	public Map<String,RIDFLDMap> modifiedMap = new HashMap<String,RIDFLDMap>();
+	
+//	public Set<RecordFile> myRF = new HashSet<RecordFile>();
 	/**
 	 * Creates a new transaction and associates it with a recovery manager, a
 	 * concurrency manager, and a buffer manager. This constructor depends on

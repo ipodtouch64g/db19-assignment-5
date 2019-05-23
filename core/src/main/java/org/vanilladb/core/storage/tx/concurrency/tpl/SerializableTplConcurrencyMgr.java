@@ -15,8 +15,17 @@
  ******************************************************************************/
 package org.vanilladb.core.storage.tx.concurrency.tpl;
 
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+
+import org.vanilladb.core.sql.Constant;
 import org.vanilladb.core.storage.file.BlockId;
+import org.vanilladb.core.storage.record.RIDFLDMap;
+import org.vanilladb.core.storage.record.RecordFile;
 import org.vanilladb.core.storage.record.RecordId;
+import org.vanilladb.core.storage.record.recordLoc;
 import org.vanilladb.core.storage.tx.Transaction;
 
 /**
@@ -27,9 +36,28 @@ public class SerializableTplConcurrencyMgr extends TwoPhaseLockingConcurrencyMgr
 	public SerializableTplConcurrencyMgr(long txNumber) {
 		txNum = txNumber;
 	}
-
+	// Here, we first convert all X Locks to C Locks...
+	// Then, we commit changes from modifiedMap...
+	// Finally, releaseAll Locks...
 	@Override
 	public void onTxCommit(Transaction tx) {
+		lockTbl.X2C(txNum);
+		// For each Table T this tx has changed:
+		// Use method setValOnCommit to setVal.
+		Iterator tableIter = tx.modifiedMap.entrySet().iterator();
+		while(tableIter.hasNext())
+		{	
+			Map.Entry pair = (Map.Entry)tableIter.next();
+			RecordFile rf = ((RIDFLDMap)pair.getValue()).getTi().open(tx,false);
+			Set entrySet = ((RIDFLDMap)pair.getValue()).getEntrySet();
+			Iterator it = entrySet.iterator();
+			while(it.hasNext())
+			{
+				Map.Entry locValPair = (Map.Entry)it.next();
+				rf.moveToRecordId(((recordLoc)locValPair.getKey()).rid);
+				rf.setValToPublic(((recordLoc)locValPair.getKey()).fldName, (Constant)locValPair.getValue());
+			}	
+		}
 		lockTbl.releaseAll(txNum, false);
 	}
 
