@@ -1,7 +1,9 @@
 package org.vanilladb.core.storage.record;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 
 import org.vanilladb.core.sql.Constant;
@@ -30,9 +32,21 @@ public class RIDFLDMap {
 	{
 		return actualLoc.entrySet();
 	}
-	
 	public TableInfo getTi() 
 	{
 		return this.ti;
+	}
+	public void deleteRec(RecordId rid)
+	{
+		Iterator<Entry<recordLoc, Constant>> iter = this.actualLoc.entrySet().iterator();
+		while(iter.hasNext())
+		{	
+			Entry<recordLoc,Constant> pair = iter.next();
+			if(((recordLoc)pair.getKey()).rid.equals(rid))
+			{
+				iter.remove();
+			}
+		}
+		
 	}
 }

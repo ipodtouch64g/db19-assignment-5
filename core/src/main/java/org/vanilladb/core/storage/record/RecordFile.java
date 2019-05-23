@@ -231,7 +231,13 @@ public class RecordFile implements Record {
 		// Delete the current record
 		rp.delete(fhp.getLastDeletedSlot());
 		fhp.setLastDeletedSlot(currentRecordId());
-
+		
+		// Delete modified record
+		RIDFLDMap temp = this.tx.modifiedMap.get(this.ti.tableName());
+		if(temp != null)
+		{
+			temp.deleteRec(deletedRid);
+		}
 		// Log that this logical operation ends
 		tx.recoveryMgr().logRecordFileDeletionEnd(ti.tableName(), deletedRid.block().number(), deletedRid.id());
 
@@ -445,19 +451,5 @@ public class RecordFile implements Record {
 	private boolean atLastBlock() {
 		return currentBlkNum == fileSize() - 1;
 	}
-	@Override
-    public boolean equals(Object obj) {
-        if (obj == null) {
-            return false;
-        }
-        if (getClass() != obj.getClass()) {
-            return false;
-        }
-        final RecordFile other = (RecordFile) obj;
-        return this.ti.tableName() == other.ti.tableName();
-    }
-	 @Override
-    public int hashCode() {
-        return this.ti.tableName().hashCode();
-    }
+	
 }
